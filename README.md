@@ -1,3 +1,28 @@
+# Membrane Materials Optimization for Membrane Distillation
+
+## Overview
+
+This repository contains analysis code supporting systematic 
+evaluation of 22 membrane materials (polymers, bioplastics, ceramics) for membrane 
+distillation applications across multiple performance dimensions:
+
+- **Thermal Stability** - Maximum service temperature evaluation
+- **Mechanical Integrity** - Tensile strength and structural resilience
+- **Vapor Transport** - Water vapor transmission rates
+- **Chemical Compatibility** - Resistance to acids, alkalis, organic solvents
+- **Environmental Impact** - Embodied energy and CO₂ emissions via life cycle assessment
+- **Economic Feasibility** - Material cost analysis
+
+## Features
+
+- ✅ Multi-criteria performance index calculation with customizable weighting
+- ✅ Property correlation analysis and trade-off mapping
+- ✅ Sensitivity analysis for threshold requirements
+- ✅ Application-specific material ranking (desalination, harsh environments, sustainability)
+- ✅ Automated visualization generation
+- ✅ CSV export for further analysis
+
+
 # Membrane-Materials-Optimization-MD
 Multi-criteria materials selection framework for membrane distillation applications integrating ANSYS GRANTA materials informatics with life cycle assessment. Systematic evaluation of 22 polymeric, bioplastic, and ceramic materials across thermal, mechanical, transport, environmental, and economic performance dimensions.
 """
