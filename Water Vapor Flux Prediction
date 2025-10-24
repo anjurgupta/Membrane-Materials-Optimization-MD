@@ -54,4 +54,422 @@ def calculate_vapor_pressure_antoine(temperature_celsius, substance='water'):
 # STEP 2: DEFINE DUSTY-GAS MODEL FOR FLUX PREDICTION
 # ============================================================================
 
-def predict_vapor_flux_dusty_gas(WVTR
+def predict_vapor_flux_dusty_gas(WVTR, porosity=0.70, tortuosity=2.0, 
+                                  thickness_um=100, T_hot=70, T_cold=20):
+    """
+    Predict water vapor flux using dusty-gas model
+    
+    Theory:
+    -------
+    The dusty-gas model combines Knudsen diffusion (molecule-wall collisions)
+    and molecular diffusion (molecule-molecule collisions):
+    
+    J = (WVTR × ε) / (τ × δ) × ΔP_vapor
+    
+    Where:
+    - J : water vapor flux (kg·m⁻²·h⁻¹)
+    - WVTR : water vapor transmission rate (g·mm·m⁻²·day⁻¹)
+    - ε : membrane porosity (dimensionless, 0-1)
+    - τ : tortuosity factor (dimensionless, typically 1.5-3.0)
+    - δ : membrane thickness (m)
+    - ΔP_vapor : vapor pressure driving force (Pa)
+    
+    Parameters:
+    -----------
+    WVTR : float
+        Water vapor transmission rate from GRANTA (g·mm·m⁻²·day⁻¹)
+    porosity : float
+        Assumed membrane porosity (default 0.70 = 70%)
+    tortuosity : float
+        Tortuosity factor (default 2.0, typical for non-woven structures)
+    thickness_um : float
+        Assumed membrane thickness in micrometers (default 100 μm)
+    T_hot : float
+        Hot feed temperature (°C, default 70°C)
+    T_cold : float
+        Cold permeate temperature (°C, default 20°C)
+    
+    Returns:
+    --------
+    dict : Dictionary containing predicted flux and intermediate calculations
+    """
+    
+    # Convert thickness from micrometers to meters
+    thickness_m = thickness_um / 1e6
+    
+    # Calculate vapor pressures at operating temperatures using Antoine equation
+    P_hot_Pa = calculate_vapor_pressure_antoine(T_hot, 'water')
+    P_cold_Pa = calculate_vapor_pressure_antoine(T_cold, 'water')
+    
+    # Calculate vapor pressure driving force
+    delta_P_Pa = P_hot_Pa - P_cold_Pa
+    
+    # Convert WVTR from g·mm·m⁻²·day⁻¹ to kg·m⁻²·h⁻¹
+    # WVTR units: g·mm·m⁻²·day⁻¹
+    # Convert: (g/1000 kg) × (1 mm = 1/1000 m) × (1 day = 1/24 h)
+    # WVTR_SI = WVTR × (1/1000) × (1/1000) × (1/24) = WVTR × 4.167e-8
+    WVTR_SI_units = WVTR / 1000 / 1000 / 24  # kg·m⁻²·h⁻¹ per unit WVTR value
+    
+    # Calculate predicted flux using dusty-gas model
+    # J = (WVTR × ε) / (τ × δ) × ΔP_vapor
+    flux_component = (WVTR * porosity) / (tortuosity * thickness_m)
+    J_predicted = flux_component * delta_P_Pa * 1e-6  # Scale factor for unit conversion
+    
+    # Alternative direct calculation with proper unit conversion
+    J_predicted_direct = (WVTR_SI_units * porosity / (tortuosity * thickness_m)) * delta_P_Pa
+    
+    return {
+        'WVTR': WVTR,
+        'Porosity': porosity,
+        'Tortuosity': tortuosity,
+        'Thickness_um': thickness_um,
+        'Thickness_m': thickness_m,
+        'T_hot_C': T_hot,
+        'T_cold_C': T_cold,
+        'P_hot_Pa': P_hot_Pa,
+        'P_cold_Pa': P_cold_Pa,
+        'DeltaP_Pa': delta_P_Pa,
+        'J_predicted_kg_m2_h': J_predicted,
+        'J_predicted_kg_m2_h_direct': J_predicted_direct
+    }
+
+# ============================================================================
+# STEP 3: INPUT YOUR DATA
+# ============================================================================
+
+# GRANTA database values for 22 materials
+data = {
+    'Material': [
+        'PE', 'PVC', 'PP', 'PS', 'ABS', 'SAN', 'PET', 'PLA', 'CN', 'CA',
+        'PA12', 'PVDF', 'PTFE', 'PSU', 'PES', 'PEEK', 'ECTFE', 'PI',
+        'SBS', 'Nylon', 'Alumina', 'Zirconia', 'Titania'
+    ],
+    
+    # Water vapor transmission rate (g·mm·m⁻²·day⁻¹) from GRANTA
+    'WVTR': [
+        0.15, 0.5, 0.2, 3.5, 2.0, 3.0, 0.6, 5.0, 0.8, 0.5,
+        0.3, 1.2, 0.2, 5.0, 10.0, 0.15, 3.0, 0.25,
+        200, 0.3, 0.15, 0.5, 0.3
+    ],
+    
+    # Experimental flux data (for three tested materials)
+    'Experimental_Flux_kg_m2_h': [
+        np.nan, np.nan, 14.1, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan,
+        np.nan, 10.8, 29.1, np.nan, np.nan, np.nan, np.nan, np.nan,
+        np.nan, np.nan, np.nan, np.nan, np.nan
+    ],
+    
+    # Material class
+    'Class': [
+        'Plastic', 'Plastic', 'Plastic', 'Plastic', 'Plastic', 'Plastic', 
+        'Plastic', 'Bioplastic', 'Bioplastic', 'Bioplastic',
+        'Plastic', 'Plastic', 'Plastic', 'Plastic', 'Plastic', 'Plastic', 
+        'Plastic', 'Plastic', 'Plastic', 'Plastic',
+        'Ceramic', 'Ceramic', 'Ceramic'
+    ]
+}
+
+df = pd.DataFrame(data)
+
+# ============================================================================
+# STEP 4: CALCULATE PREDICTED FLUX FOR ALL MATERIALS
+# ============================================================================
+
+print("="*80)
+print("WATER VAPOR FLUX PREDICTION - MEMBRANE DISTILLATION")
+print("="*80)
+print("\nOperating Conditions (assumed):")
+print("  - Hot feed temperature: 70°C")
+print("  - Cold permeate temperature: 20°C")
+print("  - Membrane porosity: 70%")
+print("  - Tortuosity factor: 2.0")
+print("  - Membrane thickness: 100 μm")
+print("\n" + "="*80)
+
+# Parameters for flux prediction
+POROSITY = 0.70
+TORTUOSITY = 2.0
+THICKNESS_UM = 100
+T_HOT = 70
+T_COLD = 20
+
+# Calculate flux for all materials
+predicted_fluxes = []
+for idx, row in df.iterrows():
+    result = predict_vapor_flux_dusty_gas(
+        WVTR=row['WVTR'],
+        porosity=POROSITY,
+        tortuosity=TORTUOSITY,
+        thickness_um=THICKNESS_UM,
+        T_hot=T_HOT,
+        T_cold=T_COLD
+    )
+    predicted_fluxes.append(result)
+
+# Convert to DataFrame
+flux_predictions_df = pd.DataFrame(predicted_fluxes)
+df['Predicted_Flux_kg_m2_h'] = flux_predictions_df['J_predicted_kg_m2_h_direct']
+
+# ============================================================================
+# STEP 5: DISPLAY VAPOR PRESSURE CALCULATIONS
+# ============================================================================
+
+print("\nVAPOR PRESSURE CALCULATIONS (Antoine Equation):")
+print("="*80)
+
+P_hot = calculate_vapor_pressure_antoine(70, 'water')
+P_cold = calculate_vapor_pressure_antoine(20, 'water')
+delta_P = P_hot - P_cold
+
+print(f"\nAt Hot Side (70°C):")
+print(f"  Vapor Pressure = {P_hot:.2f} Pa = {P_hot/1000:.3f} kPa = {P_hot/133.322:.2f} mmHg")
+
+print(f"\nAt Cold Side (20°C):")
+print(f"  Vapor Pressure = {P_cold:.2f} Pa = {P_cold/1000:.3f} kPa = {P_cold/133.322:.2f} mmHg")
+
+print(f"\nVapor Pressure Driving Force (ΔP):")
+print(f"  ΔP = {delta_P:.2f} Pa = {delta_P/1000:.3f} kPa")
+
+# ============================================================================
+# STEP 6: DISPLAY PREDICTED FLUX RESULTS
+# ============================================================================
+
+print("\n" + "="*80)
+print("PREDICTED WATER VAPOR FLUX FOR ALL MATERIALS")
+print("="*80)
+
+display_df = df[['Material', 'Class', 'WVTR', 'Predicted_Flux_kg_m2_h']].copy()
+display_df['Predicted_Flux_kg_m2_h'] = display_df['Predicted_Flux_kg_m2_h'].apply(lambda x: f"{x:.2f}")
+display_df = display_df.sort_values('Predicted_Flux_kg_m2_h', ascending=False)
+
+print(display_df.to_string(index=False))
+
+# ============================================================================
+# STEP 7: VALIDATION AGAINST EXPERIMENTAL DATA
+# ============================================================================
+
+print("\n" + "="*80)
+print("VALIDATION: PREDICTED VS. EXPERIMENTAL FLUX")
+print("="*80)
+
+# Extract materials with experimental data
+materials_with_exp = df[df['Experimental_Flux_kg_m2_h'].notna()].copy()
+
+if len(materials_with_exp) > 0:
+    print(f"\nMaterials tested experimentally: {len(materials_with_exp)}")
+    print("-" * 80)
+    
+    validation_table = materials_with_exp[
+        ['Material', 'Predicted_Flux_kg_m2_h', 'Experimental_Flux_kg_m2_h']
+    ].copy()
+    
+    # Calculate errors
+    validation_table['Absolute_Error'] = (
+        abs(validation_table['Predicted_Flux_kg_m2_h'] - 
+            validation_table['Experimental_Flux_kg_m2_h'])
+    )
+    validation_table['Percent_Error'] = (
+        (validation_table['Absolute_Error'] / 
+         validation_table['Experimental_Flux_kg_m2_h']) * 100
+    )
+    
+    # Format for display
+    validation_table['Predicted_Flux_kg_m2_h'] = validation_table['Predicted_Flux_kg_m2_h'].apply(lambda x: f"{x:.2f}")
+    validation_table['Experimental_Flux_kg_m2_h'] = validation_table['Experimental_Flux_kg_m2_h'].apply(lambda x: f"{x:.2f}")
+    validation_table['Absolute_Error'] = validation_table['Absolute_Error'].apply(lambda x: f"{x:.2f}")
+    validation_table['Percent_Error'] = validation_table['Percent_Error'].apply(lambda x: f"{x:.1f}%")
+    
+    print(validation_table.to_string(index=False))
+    
+    # Calculate statistics
+    predicted = materials_with_exp['Predicted_Flux_kg_m2_h'].values
+    experimental = materials_with_exp['Experimental_Flux_kg_m2_h'].values
+    
+    absolute_errors = np.abs(predicted - experimental)
+    percent_errors = (absolute_errors / experimental) * 100
+    
+    # Correlation analysis
+    correlation, p_value = stats.pearsonr(predicted, experimental)
+    
+    print(f"\n--- PREDICTION ACCURACY METRICS ---")
+    print(f"Mean Absolute Error (MAE): {np.mean(absolute_errors):.2f} kg·m⁻²·h⁻¹")
+    print(f"Mean Percent Error (MPE): {np.mean(percent_errors):.1f}%")
+    print(f"Root Mean Square Error (RMSE): {np.sqrt(np.mean(absolute_errors**2)):.2f} kg·m⁻²·h⁻¹")
+    print(f"Pearson Correlation (r): {correlation:.3f}")
+    print(f"Correlation p-value: {p_value:.4f}")
+    
+    # Model assessment
+    print(f"\n--- MODEL PERFORMANCE ASSESSMENT ---")
+    if np.mean(percent_errors) < 20:
+        print("✓ GOOD: Model predictions within ±20% of experimental values")
+    elif np.mean(percent_errors) < 50:
+        print("⚠ MODERATE: Model predictions within ±50% of experimental values")
+    else:
+        print("✗ LIMITED: Model predictions show significant deviation from experimental values")
+    
+    if correlation > 0.8 and p_value < 0.05:
+        print("✓ STRONG: Significant correlation between predicted and experimental trends (p < 0.05)")
+    elif correlation > 0.5 and p_value < 0.05:
+        print("⚠ MODERATE: Moderate correlation, model captures relative performance trends")
+    else:
+        print("✗ WEAK: Weak correlation, model may not reliably rank materials")
+
+# ============================================================================
+# STEP 8: SAVE RESULTS TO CSV
+# ============================================================================
+
+output_df = df[['Material', 'Class', 'WVTR', 'Predicted_Flux_kg_m2_h', 
+                 'Experimental_Flux_kg_m2_h']].copy()
+output_df = output_df.sort_values('Predicted_Flux_kg_m2_h', ascending=False)
+output_df.to_csv('flux_prediction_results.csv', index=False)
+print("\n✓ Results saved to: flux_prediction_results.csv")
+
+# ============================================================================
+# STEP 9: CREATE VISUALIZATIONS
+# ============================================================================
+
+print("\nGenerating visualizations...")
+
+# Set style
+sns.set_style("whitegrid")
+plt.rcParams['figure.figsize'] = (14, 10)
+
+# Figure 1: Predicted Flux Bar Chart
+fig, ax = plt.subplots(figsize=(14, 8))
+
+plot_data = df.sort_values('Predicted_Flux_kg_m2_h', ascending=True)
+colors = ['red' if c == 'Ceramic' else 'magenta' if c == 'Bioplastic' else 'blue' 
+          for c in plot_data['Class']]
+
+bars = ax.barh(plot_data['Material'], plot_data['Predicted_Flux_kg_m2_h'], 
+               color=colors, alpha=0.7, edgecolor='black', linewidth=0.5)
+
+# Highlight experimental values
+exp_mask = plot_data['Experimental_Flux_kg_m2_h'].notna()
+exp_materials = plot_data[exp_mask]['Material'].values
+exp_fluxes = plot_data[exp_mask]['Experimental_Flux_kg_m2_h'].values
+exp_indices = [list(plot_data['Material']).index(m) for m in exp_materials]
+
+for idx, exp_flux in zip(exp_indices, exp_fluxes):
+    ax.plot(exp_flux, idx, 'r*', markersize=20, markeredgecolor='darkred', 
+            markeredgewidth=1, label='Experimental' if idx == exp_indices[0] else '')
+
+ax.set_xlabel('Water Vapor Flux (kg·m⁻²·h⁻¹)', fontsize=12, fontweight='bold')
+ax.set_ylabel('Material', fontsize=12, fontweight='bold')
+ax.set_title('Predicted Water Vapor Flux - All Materials\n(Stars indicate experimental measurements)',
+             fontsize=14, fontweight='bold')
+ax.grid(axis='x', alpha=0.3)
+
+# Add legend
+from matplotlib.patches import Patch
+legend_elements = [
+    Patch(facecolor='blue', alpha=0.7, label='Plastic'),
+    Patch(facecolor='magenta', alpha=0.7, label='Bioplastic'),
+    Patch(facecolor='red', alpha=0.7, label='Ceramic'),
+    plt.Line2D([0], [0], marker='*', color='w', markerfacecolor='r', 
+               markersize=15, markeredgecolor='darkred', label='Experimental')
+]
+ax.legend(handles=legend_elements, loc='lower right', fontsize=10)
+
+plt.tight_layout()
+plt.savefig('predicted_flux_all_materials.png', dpi=300, bbox_inches='tight')
+print("✓ Saved: predicted_flux_all_materials.png")
+
+# Figure 2: Predicted vs. Experimental Comparison
+if len(materials_with_exp) > 0:
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    x_data = materials_with_exp['Predicted_Flux_kg_m2_h'].values
+    y_data = materials_with_exp['Experimental_Flux_kg_m2_h'].values
+    materials = materials_with_exp['Material'].values
+    
+    # Scatter plot
+    ax.scatter(x_data, y_data, s=300, alpha=0.7, c='blue', edgecolors='black', linewidth=2)
+    
+    # Add material labels
+    for i, material in enumerate(materials):
+        ax.annotate(material, (x_data[i], y_data[i]), 
+                   xytext=(5, 5), textcoords='offset points', fontsize=11, fontweight='bold')
+    
+    # Perfect prediction line (y = x)
+    min_val = min(x_data.min(), y_data.min())
+    max_val = max(x_data.max(), y_data.max())
+    ax.plot([min_val, max_val], [min_val, max_val], 'k--', linewidth=2, label='Perfect Prediction')
+    
+    # Linear fit line
+    z = np.polyfit(x_data, y_data, 1)
+    p = np.poly1d(z)
+    x_line = np.linspace(min_val, max_val, 100)
+    ax.plot(x_line, p(x_line), 'r-', linewidth=2, alpha=0.7, label='Linear Fit')
+    
+    ax.set_xlabel('Predicted Flux (kg·m⁻²·h⁻¹)', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Experimental Flux (kg·m⁻²·h⁻¹)', fontsize=12, fontweight='bold')
+    ax.set_title(f'Model Validation: Predicted vs. Experimental\n(r = {correlation:.3f}, p = {p_value:.4f})',
+                 fontsize=14, fontweight='bold')
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=11, loc='upper left')
+    
+    # Equal aspect ratio
+    ax.set_aspect('equal', adjustable='box')
+    
+    plt.tight_layout()
+    plt.savefig('predicted_vs_experimental_flux.png', dpi=300, bbox_inches='tight')
+    print("✓ Saved: predicted_vs_experimental_flux.png")
+
+# Figure 3: WVTR vs. Predicted Flux Relationship
+fig, ax = plt.subplots(figsize=(12, 8))
+
+for material_class in df['Class'].unique():
+    mask = df['Class'] == material_class
+    color = 'red' if material_class == 'Ceramic' else 'magenta' if material_class == 'Bioplastic' else 'blue'
+    
+    ax.scatter(df[mask]['WVTR'], df[mask]['Predicted_Flux_kg_m2_h'],
+              label=material_class, s=150, alpha=0.7, color=color, edgecolors='black', linewidth=1)
+
+ax.set_xlabel('Water Vapor Transmission Rate - WVTR (g·mm·m⁻²·day⁻¹)', 
+             fontsize=12, fontweight='bold')
+ax.set_ylabel('Predicted Flux (kg·m⁻²·h⁻¹)', fontsize=12, fontweight='bold')
+ax.set_title('Relationship: WVTR vs. Predicted Flux\n(Using Dusty-Gas Model)',
+            fontsize=14, fontweight='bold')
+ax.set_xscale('log')
+ax.set_yscale('log')
+ax.grid(alpha=0.3, which='both')
+ax.legend(fontsize=11, loc='best')
+
+plt.tight_layout()
+plt.savefig('wvtr_vs_predicted_flux.png', dpi=300, bbox_inches='tight')
+print("✓ Saved: wvtr_vs_predicted_flux.png")
+
+# ============================================================================
+# STEP 10: SUMMARY AND INTERPRETATION
+# ============================================================================
+
+print("\n" + "="*80)
+print("SUMMARY AND INTERPRETATION")
+print("="*80)
+
+print("\nTheoretical Model Used:")
+print("  Dusty-Gas Model with Knudsen and Molecular Diffusion")
+print("  J = (WVTR × ε) / (τ × δ) × ΔP_vapor")
+
+print(f"\nOperating Conditions:")
+print(f"  Temperature difference: {T_HOT - T_COLD}°C (ΔP = {delta_P:.0f} Pa)")
+print(f"  Assumed porosity: {POROSITY*100:.0f}%")
+print(f"  Assumed tortuosity: {TORTUOSITY}")
+print(f"  Assumed thickness: {THICKNESS_UM} μm")
+
+print(f"\nTop 5 Materials by Predicted Flux:")
+top5 = df.nlargest(5, 'Predicted_Flux_kg_m2_h')[['Material', 'Class', 'WVTR', 'Predicted_Flux_kg_m2_h']]
+for idx, row in top5.iterrows():
+    print(f"  {row['Material']}: {row['Predicted_Flux_kg_m2_h']:.2f} kg·m⁻²·h⁻¹ (WVTR = {row['WVTR']:.2f})")
+
+print("\n" + "="*80)
+print("ANALYSIS COMPLETE!")
+print("="*80)
+print("\nGenerated files:")
+print("  1. flux_prediction_results.csv")
+print("  2. predicted_flux_all_materials.png")
+if len(materials_with_exp) > 0:
+    print("  3. predicted_vs_experimental_flux.png")
+    print("  4. wvtr_vs_predicted_flux.png")
+print("\n" + "="*80)
