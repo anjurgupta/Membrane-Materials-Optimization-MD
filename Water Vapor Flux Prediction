@@ -1,0 +1,57 @@
+"""
+Water Vapor Flux Prediction for Membrane Distillation
+Predicts membrane performance using dusty-gas model with Knudsen and molecular diffusion
+Compares theoretical predictions against experimental measurements
+"""
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from scipy import stats
+
+# ============================================================================
+# STEP 1: DEFINE ANTOINE EQUATION FOR VAPOR PRESSURE
+# ============================================================================
+
+def calculate_vapor_pressure_antoine(temperature_celsius, substance='water'):
+    """
+    Calculate vapor pressure using Antoine equation
+    
+    Parameters:
+    -----------
+    temperature_celsius : float
+        Temperature in °C
+    substance : str
+        Substance name ('water' by default)
+    
+    Returns:
+    --------
+    float : Vapor pressure in Pascal (Pa)
+    
+    Antoine Equation: log₁₀(P) = A - B/(C + T)
+    Where P is vapor pressure in mmHg, T is temperature in °C
+    1 mmHg = 133.322 Pa
+    """
+    
+    if substance.lower() == 'water':
+        # Water Antoine coefficients (valid 0-100°C range)
+        A = 8.07131
+        B = 1730.63
+        C = 233.426
+    else:
+        raise ValueError("Currently only 'water' is supported")
+    
+    # Calculate log10 of vapor pressure in mmHg
+    log_P_mmHg = A - B / (C + temperature_celsius)
+    
+    # Convert from mmHg to Pa
+    P_Pa = (10 ** log_P_mmHg) * 133.322
+    
+    return P_Pa
+
+# ============================================================================
+# STEP 2: DEFINE DUSTY-GAS MODEL FOR FLUX PREDICTION
+# ============================================================================
+
+def predict_vapor_flux_dusty_gas(WVTR
