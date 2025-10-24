@@ -1,0 +1,430 @@
+"""
+Pearson Correlation Analysis for Membrane Material Properties
+Analyzes structure-property relationships across membrane materials for MD applications
+Calculates correlation coefficients, statistical significance, and generates visualizations
+"""
+
+import pandas as pd
+import numpy as np
+from scipy import stats
+import matplotlib.pyplot as plt
+import seaborn as sns
+from itertools import combinations
+
+# ============================================================================
+# STEP 1: INPUT YOUR DATA
+# ============================================================================
+
+# Create dataframe with your 22 materials and their properties
+# Replace with your actual GRANTA data
+data = {
+    'Material': [
+        'PE', 'PVC', 'PP', 'PS', 'ABS', 'SAN', 'PET', 'PLA', 'CN', 'CA',
+        'PA12', 'PVDF', 'PTFE', 'PSU', 'PES', 'PEEK', 'ECTFE', 'PI',
+        'SBS', 'Nylon', 'Alumina', 'Zirconia', 'Titania'
+    ],
+    
+    # Maximum service temperature (°C)
+    'MaxTemp': [
+        80, 60, 130, 95, 90, 85, 115, 55, 80, 75,
+        100, 150, 260, 180, 200, 250, 150, 280,
+        70, 120, 1800, 2400, 1600
+    ],
+    
+    # Tensile strength (MPa)
+    'TensileStrength': [
+        25, 45, 35, 45, 45, 60, 55, 60, 45, 50,
+        40, 45, 35, 70, 85, 105, 45, 75,
+        7, 70, 250, 200, 240
+    ],
+    
+    # Water vapor transmission rate (g·mm·m⁻²·day⁻¹)
+    'WVTR': [
+        0.15, 0.5, 0.2, 3.5, 2.0, 3.0, 0.6, 5.0, 0.8, 0.5,
+        0.3, 1.2, 0.2, 5.0, 10.0, 0.15, 3.0, 0.25,
+        200, 0.3, 0.15, 0.5, 0.3
+    ],
+    
+    # Density (g/cm³)
+    'Density': [
+        0.95, 1.38, 0.91, 1.05, 1.04, 1.08, 1.38, 1.24, 1.50, 1.30,
+        1.01, 1.78, 2.15, 1.24, 1.37, 1.32, 1.68, 1.43,
+        0.94, 1.14, 3.95, 5.68, 4.23
+    ],
+    
+    # Embodied energy (MJ/kg)
+    'EmbodiedEnergy': [
+        80, 65, 73, 87, 95, 110, 82, 56, 24, 85,
+        75, 92, 98, 95, 145, 152, 98, 160,
+        88, 100, 38, 42, 41
+    ],
+    
+    # Material cost (USD/kg)
+    'Cost': [
+        2.5, 2.2, 2.8, 3.5, 3.2, 4.5, 2.8, 3.5, 4.0, 3.8,
+        6.0, 12.0, 16.5, 11.5, 18.0, 48.0, 43.0, 35.0,
+        6.5, 10.5, 26.0, 40.0, 30.0
+    ],
+    
+    # Material class
+    'Class': [
+        'Plastic', 'Plastic', 'Plastic', 'Plastic', 'Plastic', 'Plastic', 
+        'Plastic', 'Bioplastic', 'Bioplastic', 'Bioplastic',
+        'Plastic', 'Plastic', 'Plastic', 'Plastic', 'Plastic', 'Plastic', 
+        'Plastic', 'Plastic', 'Plastic', 'Plastic',
+        'Ceramic', 'Ceramic', 'Ceramic'
+    ]
+}
+
+df = pd.DataFrame(data)
+
+# ============================================================================
+# STEP 2: DEFINE CORRELATION CALCULATION FUNCTION
+# ============================================================================
+
+def calculate_pearson_correlation(x, y, property1_name, property2_name):
+    """
+    Calculate Pearson correlation coefficient with full statistical analysis
+    
+    Parameters:
+    -----------
+    x, y : array-like
+        Property values to correlate
+    property1_name, property2_name : str
+        Names of properties for reporting
+    
+    Returns:
+    --------
+    dict : Dictionary containing correlation statistics
+    """
+    # Remove any NaN values
+    mask = ~(np.isnan(x) | np.isnan(y))
+    x_clean = x[mask]
+    y_clean = y[mask]
+    
+    n = len(x_clean)
+    
+    # Calculate Pearson correlation coefficient and p-value
+    r, p_value = stats.pearsonr(x_clean, y_clean)
+    
+    # Calculate t-statistic
+    # Formula: t = r × sqrt((n-2)/(1-r²))
+    if abs(r) < 1.0:
+        t_stat = r * np.sqrt((n - 2) / (1 - r**2))
+    else:
+        t_stat = np.inf if r > 0 else -np.inf
+    
+    # Degrees of freedom
+    df_stat = n - 2
+    
+    # Confidence interval (95%)
+    # Fisher z-transformation for confidence interval
+    z = np.arctanh(r)
+    se = 1 / np.sqrt(n - 3)
+    z_crit = 1.96  # 95% confidence
+    ci_lower = np.tanh(z - z_crit * se)
+    ci_upper = np.tanh(z + z_crit * se)
+    
+    # Interpret correlation strength
+    abs_r = abs(r)
+    if abs_r >= 0.7:
+        strength = "Strong"
+    elif abs_r >= 0.4:
+        strength = "Moderate"
+    elif abs_r >= 0.2:
+        strength = "Weak"
+    else:
+        strength = "Very Weak"
+    
+    # Direction
+    direction = "Positive" if r > 0 else "Negative"
+    
+    # Statistical significance
+    if p_value < 0.001:
+        significance = "Highly Significant (p < 0.001)"
+    elif p_value < 0.01:
+        significance = "Highly Significant (p < 0.01)"
+    elif p_value < 0.05:
+        significance = "Significant (p < 0.05)"
+    else:
+        significance = "Not Significant (p ≥ 0.05)"
+    
+    return {
+        'Property_1': property1_name,
+        'Property_2': property2_name,
+        'n': n,
+        'r': r,
+        'r_squared': r**2,
+        'p_value': p_value,
+        't_statistic': t_stat,
+        'df': df_stat,
+        'CI_lower': ci_lower,
+        'CI_upper': ci_upper,
+        'Strength': strength,
+        'Direction': direction,
+        'Significance': significance
+    }
+
+# ============================================================================
+# STEP 3: CALCULATE CORRELATIONS FOR ALL PROPERTY PAIRS
+# ============================================================================
+
+print("="*80)
+print("PEARSON CORRELATION ANALYSIS - MEMBRANE MATERIAL PROPERTIES")
+print("="*80)
+print(f"\nDataset: {len(df)} materials evaluated")
+print(f"Material classes: {df['Class'].value_counts().to_dict()}")
+print("\n" + "="*80)
+
+# Define properties to analyze
+properties = {
+    'MaxTemp': 'Maximum Service Temperature (°C)',
+    'TensileStrength': 'Tensile Strength (MPa)',
+    'WVTR': 'Water Vapor Transmission Rate',
+    'Density': 'Density (g/cm³)',
+    'EmbodiedEnergy': 'Embodied Energy (MJ/kg)',
+    'Cost': 'Material Cost (USD/kg)'
+}
+
+# Calculate correlations for all unique pairs
+correlation_results = []
+
+property_pairs = list(combinations(properties.keys(), 2))
+
+for prop1, prop2 in property_pairs:
+    result = calculate_pearson_correlation(
+        df[prop1].values,
+        df[prop2].values,
+        properties[prop1],
+        properties[prop2]
+    )
+    correlation_results.append(result)
+
+# Convert to DataFrame
+results_df = pd.DataFrame(correlation_results)
+
+# Sort by absolute correlation strength
+results_df['abs_r'] = results_df['r'].abs()
+results_df_sorted = results_df.sort_values('abs_r', ascending=False)
+
+# ============================================================================
+# STEP 4: DISPLAY DETAILED RESULTS
+# ============================================================================
+
+print("\nCORRELATION ANALYSIS RESULTS")
+print("="*80)
+print("\n--- STRONGEST CORRELATIONS ---")
+print(results_df_sorted.head(10).to_string(index=False))
+
+print("\n\n--- STATISTICALLY SIGNIFICANT CORRELATIONS (p < 0.05) ---")
+significant = results_df_sorted[results_df_sorted['p_value'] < 0.05]
+print(f"\nFound {len(significant)} significant correlations out of {len(results_df)} total pairs\n")
+print(significant.to_string(index=False))
+
+# ============================================================================
+# STEP 5: CREATE DETAILED OUTPUT TABLE
+# ============================================================================
+
+# Format for publication
+output_table = results_df_sorted[[
+    'Property_1', 'Property_2', 'r', 'p_value', 't_statistic', 
+    'CI_lower', 'CI_upper', 'Strength', 'Significance'
+]].copy()
+
+output_table['r'] = output_table['r'].apply(lambda x: f"{x:.3f}")
+output_table['p_value'] = output_table['p_value'].apply(lambda x: f"{x:.4f}" if x >= 0.001 else "< 0.001")
+output_table['t_statistic'] = output_table['t_statistic'].apply(lambda x: f"{x:.3f}")
+output_table['CI_lower'] = output_table['CI_lower'].apply(lambda x: f"{x:.3f}")
+output_table['CI_upper'] = output_table['CI_upper'].apply(lambda x: f"{x:.3f}")
+
+print("\n\n--- PUBLICATION-READY TABLE ---")
+print(output_table.to_string(index=False))
+
+# Save to CSV
+results_df_sorted.to_csv('correlation_analysis_results.csv', index=False)
+print("\n✓ Detailed results saved to: correlation_analysis_results.csv")
+
+# ============================================================================
+# STEP 6: CREATE CORRELATION MATRIX
+# ============================================================================
+
+# Create correlation matrix
+property_cols = list(properties.keys())
+corr_matrix = df[property_cols].corr()
+
+# Create p-value matrix
+p_matrix = pd.DataFrame(np.zeros((len(property_cols), len(property_cols))),
+                        columns=property_cols,
+                        index=property_cols)
+
+for i, prop1 in enumerate(property_cols):
+    for j, prop2 in enumerate(property_cols):
+        if i != j:
+            _, p_val = stats.pearsonr(df[prop1], df[prop2])
+            p_matrix.iloc[i, j] = p_val
+
+# ============================================================================
+# STEP 7: CREATE VISUALIZATIONS
+# ============================================================================
+
+print("\nGenerating visualizations...")
+
+# Set style
+sns.set_style("white")
+plt.rcParams['font.size'] = 10
+
+# Figure 1: Correlation Matrix Heatmap
+fig, ax = plt.subplots(figsize=(12, 10))
+
+# Create mask for upper triangle
+mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
+
+# Generate heatmap
+sns.heatmap(corr_matrix, 
+            mask=mask,
+            annot=True, 
+            fmt='.3f',
+            cmap='RdBu_r',
+            vmin=-1, 
+            vmax=1,
+            center=0,
+            square=True,
+            linewidths=1,
+            cbar_kws={"shrink": 0.8, "label": "Pearson Correlation Coefficient (r)"},
+            ax=ax)
+
+# Customize labels
+labels = [properties[col].replace(' ', '\n') for col in property_cols]
+ax.set_xticklabels(labels, rotation=45, ha='right')
+ax.set_yticklabels(labels, rotation=0)
+
+ax.set_title('Correlation Matrix: Membrane Material Properties\n(Lower Triangle Only)', 
+             fontsize=14, fontweight='bold', pad=20)
+
+plt.tight_layout()
+plt.savefig('correlation_matrix_heatmap.png', dpi=300, bbox_inches='tight')
+print("✓ Saved: correlation_matrix_heatmap.png")
+
+# Figure 2: Scatter plots for significant correlations
+significant_pairs = results_df_sorted[results_df_sorted['p_value'] < 0.05].head(6)
+
+fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+axes = axes.flatten()
+
+for idx, row in enumerate(significant_pairs.itertuples()):
+    if idx >= 6:
+        break
+    
+    ax = axes[idx]
+    
+    # Extract property column names
+    prop1_key = [k for k, v in properties.items() if v == row.Property_1][0]
+    prop2_key = [k for k, v in properties.items() if v == row.Property_2][0]
+    
+    # Create scatter plot with color by material class
+    for material_class in df['Class'].unique():
+        mask = df['Class'] == material_class
+        color = 'red' if material_class == 'Ceramic' else 'magenta' if material_class == 'Bioplastic' else 'blue'
+        ax.scatter(df[mask][prop1_key], 
+                   df[mask][prop2_key],
+                   label=material_class,
+                   alpha=0.6,
+                   s=100,
+                   color=color)
+    
+    # Add regression line
+    z = np.polyfit(df[prop1_key], df[prop2_key], 1)
+    p = np.poly1d(z)
+    x_line = np.linspace(df[prop1_key].min(), df[prop1_key].max(), 100)
+    ax.plot(x_line, p(x_line), "k--", alpha=0.5, linewidth=2)
+    
+    # Labels and title
+    ax.set_xlabel(row.Property_1, fontsize=11)
+    ax.set_ylabel(row.Property_2, fontsize=11)
+    ax.set_title(f'r = {row.r:.3f}, p = {row.p_value:.4f}\n{row.Strength} {row.Direction}',
+                 fontsize=10, fontweight='bold')
+    ax.grid(alpha=0.3)
+    
+    if idx == 0:
+        ax.legend(fontsize=9, loc='best')
+
+plt.suptitle('Scatter Plots: Significant Property Correlations', 
+             fontsize=16, fontweight='bold', y=1.00)
+plt.tight_layout()
+plt.savefig('significant_correlations_scatter.png', dpi=300, bbox_inches='tight')
+print("✓ Saved: significant_correlations_scatter.png")
+
+# Figure 3: Correlation Strength Bar Chart
+fig, ax = plt.subplots(figsize=(14, 8))
+
+top_correlations = results_df_sorted.head(15).copy()
+top_correlations['pair_label'] = (
+    top_correlations['Property_1'].str.split('(').str[0].str.strip() + ' vs\n' +
+    top_correlations['Property_2'].str.split('(').str[0].str.strip()
+)
+
+colors = ['green' if p < 0.001 else 'orange' if p < 0.01 else 'steelblue' if p < 0.05 else 'gray' 
+          for p in top_correlations['p_value']]
+
+bars = ax.barh(range(len(top_correlations)), 
+               top_correlations['r'],
+               color=colors,
+               alpha=0.7)
+
+ax.set_yticks(range(len(top_correlations)))
+ax.set_yticklabels(top_correlations['pair_label'], fontsize=9)
+ax.set_xlabel('Pearson Correlation Coefficient (r)', fontsize=12, fontweight='bold')
+ax.set_title('Top 15 Property Correlations by Strength', fontsize=14, fontweight='bold')
+ax.axvline(x=0, color='black', linewidth=0.8)
+ax.grid(axis='x', alpha=0.3)
+
+# Add legend for p-values
+from matplotlib.patches import Patch
+legend_elements = [
+    Patch(facecolor='green', alpha=0.7, label='p < 0.001 (highly significant)'),
+    Patch(facecolor='orange', alpha=0.7, label='0.001 ≤ p < 0.01 (highly significant)'),
+    Patch(facecolor='steelblue', alpha=0.7, label='0.01 ≤ p < 0.05 (significant)'),
+    Patch(facecolor='gray', alpha=0.7, label='p ≥ 0.05 (not significant)')
+]
+ax.legend(handles=legend_elements, loc='lower right', fontsize=9)
+
+plt.tight_layout()
+plt.savefig('correlation_strength_ranking.png', dpi=300, bbox_inches='tight')
+print("✓ Saved: correlation_strength_ranking.png")
+
+# ============================================================================
+# STEP 8: SUMMARY STATISTICS
+# ============================================================================
+
+print("\n" + "="*80)
+print("SUMMARY STATISTICS")
+print("="*80)
+
+print(f"\nTotal property pairs analyzed: {len(results_df)}")
+print(f"Significant correlations (p < 0.05): {len(results_df[results_df['p_value'] < 0.05])} ({len(results_df[results_df['p_value'] < 0.05])/len(results_df)*100:.1f}%)")
+print(f"Highly significant (p < 0.01): {len(results_df[results_df['p_value'] < 0.01])} ({len(results_df[results_df['p_value'] < 0.01])/len(results_df)*100:.1f}%)")
+
+print("\nCorrelation strength distribution:")
+for strength in ['Strong', 'Moderate', 'Weak', 'Very Weak']:
+    count = len(results_df[results_df['Strength'] == strength])
+    print(f"  {strength}: {count} ({count/len(results_df)*100:.1f}%)")
+
+print("\nStrongest positive correlation:")
+strongest_pos = results_df_sorted[results_df_sorted['r'] > 0].iloc[0]
+print(f"  {strongest_pos['Property_1']} vs {strongest_pos['Property_2']}")
+print(f"  r = {strongest_pos['r']:.3f}, p = {strongest_pos['p_value']:.4f}")
+
+print("\nStrongest negative correlation:")
+strongest_neg = results_df_sorted[results_df_sorted['r'] < 0].iloc[0]
+print(f"  {strongest_neg['Property_1']} vs {strongest_neg['Property_2']}")
+print(f"  r = {strongest_neg['r']:.3f}, p = {strongest_neg['p_value']:.4f}")
+
+print("\n" + "="*80)
+print("ANALYSIS COMPLETE!")
+print("="*80)
+print("\nGenerated files:")
+print("  1. correlation_analysis_results.csv")
+print("  2. correlation_matrix_heatmap.png")
+print("  3. significant_correlations_scatter.png")
+print("  4. correlation_strength_ranking.png")
+print("\n" + "="*80)
